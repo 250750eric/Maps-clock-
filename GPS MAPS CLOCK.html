@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>GPS Maps 儀表板</title>
+    <!-- 引入 Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background-color: #1e1e1e;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+        }
+        /* 頂部：時間與時速 */
+        .top-row {
+            display: flex;
+            height: 15%;
+            min-height: 80px;
+            border-bottom: 2px solid #333;
+            background-color: #2a2a2a;
+        }
+        /* 中間：地圖 */
+        .map-container {
+            flex: 1;
+            position: relative;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        /* 底部：報時設定與步數 */
+        .bottom-row {
+            display: flex;
+            height: 15%;
+            min-height: 80px;
+            border-top: 2px solid #333;
+            background-color: #2a2a2a;
+        }
+        /* 區塊共用樣式 */
+        .panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border-right: 2px solid #333;
+        }
+        .panel:last-child {
+            border-right: none;
+        }
+        .label {
+            font-size: 0.9rem;
+            color: #aaaaaa;
+            margin-bottom: 4px;
+        }
+        .value {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        /* 按鈕樣式 */
+        .settings-btn {
+            background: none;
+            border: none;
+            color: #4facfe;
+            font-size: 1.2rem;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .settings-btn:active {
+            color: #2a8bdc;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 頂部區塊 -->
+    <div class="top-row">
+        <div class="panel">
+            <div class="label">🕘 時間</div>
+            <div class="value" id="time-display">00:00:00</div>
+        </div>
+        <div class="panel">
+            <div class="label">🏎️ 時速</div>
+            <div class="value" id="speed-display">0 km/h</div>
+        </div>
+    </div>
+
+    <!-- 中間地圖區塊 -->
+    <div class="map-container">
+        <div id="map"></div>
+    </div>
+
+    <!-- 底部區塊 -->
+    <div class="bottom-row">
+        <div class="panel">
+            <button class="settings-btn" id="chime-btn">⚙️ 報時設定</button>
+        </div>
+        <div class="panel">
+            <div class="label">👟 步數</div>
+            <div class="value" id="steps-display">0</div>
+        </div>
+    </div>
+
+    <!-- 引入 Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // --- 1. 時間更新功能 ---
+        function updateTime() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            document.getElementById('time-display').textContent = `${hours}:${minutes}:${seconds}`;
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // --- 2. OpenStreetMap 地圖初始化 ---
+        // 預設中心點設為台中市北區
+        const map = L.map('map').setView([24.162, 120.683], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        let userMarker = L.marker([24.162, 120.683]).addTo(map);
+
+        // --- 3. GPS 定位與時速追蹤 ---
+        if ("geolocation" in navigator) {
+            navigator.geolocation.watchPosition(
+                function(position) {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const speed = position.coords.speed; // 單位：公尺/秒 (m/s)
+
+                    // 更新地圖位置與標記
+                    const newLatLng = new L.LatLng(lat, lng);
+                    userMarker.setLatLng(newLatLng);
+                    map.panTo(newLatLng);
+
+                    // 處理時速 (將 m/s 轉換為 km/h)
+                    if (speed !== null && speed >= 0) {
+                        const speedKmh = (speed * 3.6).toFixed(1);
+                        document.getElementById('speed-display').textContent = `${speedKmh} km/h`;
+                    }
+                },
+                function(error) {
+                    console.log("GPS 錯誤: ", error.message);
+                },
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 0,
+                    timeout: 5000
+                }
+            );
+        } else {
+            document.getElementById('speed-display').textContent = "不支援 GPS";
+        }
+
+        // --- 4. 報時設定按鈕 (模擬) ---
+        let chimeEnabled = false;
+        document.getElementById('chime-btn').addEventListener('click', function() {
+            chimeEnabled = !chimeEnabled;
+            if (chimeEnabled) {
+                this.textContent = "🔊 報時開啟";
+                this.style.color = "#4caf50";
+            } else {
+                this.textContent = "⚙️ 報時設定";
+                this.style.color = "#4facfe";
+            }
+        });
+
+        // --- 5. 步數功能 (模擬) ---
+        // 網頁端獲取真實步數需依賴 DeviceMotionEvent 或 Pedometer API (支援度有限)
+        // 此處使用點擊螢幕模擬步數增加，方便測試版面
+        let stepCount = 0;
+        document.body.addEventListener('click', function() {
+            stepCount += Math.floor(Math.random() * 3) + 1; // 隨機增加 1~3 步
+            document.getElementById('steps-display').textContent = stepCount;
+        });
+    </script>
+</body>
+</html>
