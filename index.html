@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>GPS Maps 儀表板</title>
-    <!-- 引入 Leaflet CSS -->
+    <title>GPS Maps 儀表板 V2 - 小飛狼</title>
+    <!-- 引入 Leaflet CSS (用於地圖) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * {
@@ -20,7 +20,7 @@
             display: flex;
             flex-direction: column;
         }
-        /* 頂部：時間與時速 */
+        /* --- 頂部區塊 (時間與時速) --- */
         .top-row {
             display: flex;
             height: 15%;
@@ -28,7 +28,7 @@
             border-bottom: 2px solid #333;
             background-color: #2a2a2a;
         }
-        /* 中間：地圖 */
+        /* --- 中間地圖區塊 --- */
         .map-container {
             flex: 1;
             position: relative;
@@ -37,7 +37,7 @@
             width: 100%;
             height: 100%;
         }
-        /* 底部：報時設定與步數 */
+        /* --- 底部區塊 (兩個設定面板) --- */
         .bottom-row {
             display: flex;
             height: 15%;
@@ -45,7 +45,7 @@
             border-top: 2px solid #333;
             background-color: #2a2a2a;
         }
-        /* 區塊共用樣式 */
+        /* --- 共用面板樣式 --- */
         .panel {
             flex: 1;
             display: flex;
@@ -53,6 +53,7 @@
             justify-content: center;
             align-items: center;
             border-right: 2px solid #333;
+            padding: 5px;
         }
         .panel:last-child {
             border-right: none;
@@ -60,32 +61,47 @@
         .label {
             font-size: 0.9rem;
             color: #aaaaaa;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
         .value {
             font-size: 1.5rem;
             font-weight: bold;
         }
-        /* 按鈕樣式 */
+        /* 按鈕基本樣式 */
         .settings-btn {
             background: none;
-            border: none;
-            color: #4facfe;
-            font-size: 1.2rem;
-            font-weight: bold;
+            border: 1px solid #555;
+            color: #ffffff;
+            font-size: 1rem;
+            padding: 5px 10px;
             cursor: pointer;
+            width: 90%;
+            margin: 2px 0;
+            border-radius: 4px;
             display: flex;
             align-items: center;
+            justify-content: center;
             gap: 5px;
         }
         .settings-btn:active {
-            color: #2a8bdc;
+            background-color: #444;
+        }
+        
+        /* 特定按鈕樣式 */
+        #time-format-btn { color: #f4d03f; } /* 黃色 */
+        #chime-toggle-btn.on { color: #2ecc71; border-color: #2ecc71; } /* 開啟時為綠色 */
+        #chime-toggle-btn.off { color: #e74c3c; border-color: #e74c3c; } /* 關閉時為紅色 */
+        
+        /* 右下角多功能面板 */
+        .multi-info-display {
+            width: 100%;
+            text-align: center;
         }
     </style>
 </head>
 <body>
 
-    <!-- 頂部區塊 -->
+    <!-- 頂部區塊：時間與時速 (維持不變) -->
     <div class="top-row">
         <div class="panel">
             <div class="label">🕘 時間</div>
@@ -97,38 +113,83 @@
         </div>
     </div>
 
-    <!-- 中間地圖區塊 -->
+    <!-- 中間地圖區塊 (維持不變) -->
     <div class="map-container">
         <div id="map"></div>
     </div>
 
-    <!-- 底部區塊 -->
+    <!-- 底部區塊：功能切換面板 -->
     <div class="bottom-row">
+        <!-- 左下角設定面板：12/24時制與報時開啟切換 -->
         <div class="panel">
-            <button class="settings-btn" id="chime-btn">⚙️ 報時設定</button>
+            <div class="label">⚙️ 左下設定</div>
+            <button class="settings-btn" id="time-format-btn">12h</button>
+            <button class="settings-btn off" id="chime-toggle-btn">🔊 報時關閉</button>
         </div>
-        <div class="panel">
-            <div class="label">👟 步數</div>
-            <div class="value" id="steps-display">0</div>
+        
+        <!-- 右下角多功能面板：累積里程、健走步數、歸零 -->
+        <div class="panel" id="multi-info-panel">
+            <!-- 此處內容會依據狀態動態更換 -->
         </div>
     </div>
 
-    <!-- 引入 Leaflet JS -->
+    <!-- 引入 Leaflet JS (用於地圖) -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // --- 1. 時間更新功能 ---
+        // --- 狀態變數 ---
+        let is24HourFormat = false; // 是否使用24時制
+        let isChimeEnabled = false; // 是否開啟報時
+        let currentMultiDisplayMode = 'odometer'; // 'odometer', 'steps', 'reset'
+        let odometerKm = 0.0; // 模擬累積里程 (公里)
+        let stepCount = 0; // 模擬健走步數
+        let lastLatLngForOdometer = null; // 用於計算里程的上次位置
+
+        // --- 1. 時間更新與時制切換 ---
         function updateTime() {
             const now = new Date();
-            const hours = String(now.getHours()).padStart(2, '0');
+            let hours = now.getHours();
             const minutes = String(now.getMinutes()).padStart(2, '0');
             const seconds = String(now.getSeconds()).padStart(2, '0');
-            document.getElementById('time-display').textContent = `${hours}:${minutes}:${seconds}`;
+            let ampm = '';
+
+            if (!is24HourFormat) {
+                ampm = hours >= 12 ? ' PM' : ' AM';
+                hours = hours % 12;
+                hours = hours ? hours : 12; // 0點顯示為12
+                hours = String(hours);
+            } else {
+                hours = String(hours).padStart(2, '0');
+            }
+
+            document.getElementById('time-display').textContent = `${hours}:${minutes}:${seconds}${ampm}`;
         }
         setInterval(updateTime, 1000);
         updateTime();
 
-        // --- 2. OpenStreetMap 地圖初始化 ---
-        // 預設中心點設為台中市北區
+        // 處理12/24時制切換
+        const timeFormatBtn = document.getElementById('time-format-btn');
+        timeFormatBtn.addEventListener('click', function() {
+            is24HourFormat = !is24HourFormat;
+            this.textContent = is24HourFormat ? '24h' : '12h';
+            updateTime(); // 立即更新時間顯示
+        });
+
+        // 處理報時開啟切換
+        const chimeToggleBtn = document.getElementById('chime-toggle-btn');
+        chimeToggleBtn.addEventListener('click', function() {
+            isChimeEnabled = !isChimeEnabled;
+            if (isChimeEnabled) {
+                this.textContent = "🔊 報時開啟";
+                this.classList.remove('off');
+                this.classList.add('on');
+            } else {
+                this.textContent = "🔊 報時關閉";
+                this.classList.remove('on');
+                this.classList.add('off');
+            }
+        });
+
+        // --- 2. OpenStreetMap 地圖初始化 (預設中心台中市) ---
         const map = L.map('map').setView([24.162, 120.683], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors',
@@ -137,58 +198,132 @@
 
         let userMarker = L.marker([24.162, 120.683]).addTo(map);
 
-        // --- 3. GPS 定位與時速追蹤 ---
+        // --- 3. GPS 定位、時速與里程計算 ---
         if ("geolocation" in navigator) {
             navigator.geolocation.watchPosition(
                 function(position) {
                     const lat = position.coords.latitude;
                     const lng = position.coords.longitude;
-                    const speed = position.coords.speed; // 單位：公尺/秒 (m/s)
+                    const speed = position.coords.speed; // 單位：m/s
 
                     // 更新地圖位置與標記
                     const newLatLng = new L.LatLng(lat, lng);
                     userMarker.setLatLng(newLatLng);
                     map.panTo(newLatLng);
 
-                    // 處理時速 (將 m/s 轉換為 km/h)
+                    // 處理時速 (m/s -> km/h)
                     if (speed !== null && speed >= 0) {
                         const speedKmh = (speed * 3.6).toFixed(1);
                         document.getElementById('speed-display').textContent = `${speedKmh} km/h`;
+                    } else {
+                        document.getElementById('speed-display').textContent = `0.0 km/h`;
                     }
+
+                    // 處理里程計算 (模擬增加)
+                    if (lastLatLngForOdometer) {
+                        const distanceMeters = lastLatLngForOdometer.distanceTo(newLatLng); // Leaflet計算兩點距離(公尺)
+                        if (distanceMeters > 5) { // 避免GPS抖動造成里程誤差
+                            odometerKm += distanceMeters / 1000;
+                            updateMultiDisplay(); // 更新右下角顯示
+                        }
+                    }
+                    lastLatLngForOdometer = newLatLng; // 記錄本次位置
                 },
                 function(error) {
-                    console.log("GPS 錯誤: ", error.message);
+                    console.error("GPS Error: ", error.message);
                 },
                 {
                     enableHighAccuracy: true,
                     maximumAge: 0,
-                    timeout: 5000
+                    timeout: 10000
                 }
             );
         } else {
             document.getElementById('speed-display').textContent = "不支援 GPS";
         }
 
-        // --- 4. 報時設定按鈕 (模擬) ---
-        let chimeEnabled = false;
-        document.getElementById('chime-btn').addEventListener('click', function() {
-            chimeEnabled = !chimeEnabled;
-            if (chimeEnabled) {
-                this.textContent = "🔊 報時開啟";
-                this.style.color = "#4caf50";
-            } else {
-                this.textContent = "⚙️ 報時設定";
-                this.style.color = "#4facfe";
+        // --- 4. 右下角多功能面板切換與顯示 ---
+        const multiInfoPanel = document.getElementById('multi-info-panel');
+
+        function updateMultiDisplay() {
+            let panelContent = '';
+            
+            switch (currentMultiDisplayMode) {
+                case 'odometer':
+                    panelContent = `
+                        <div class="multi-info-display">
+                            <div class="label">📊 累積里程</div>
+                            <div class="value">${odometerKm.toFixed(2)} km</div>
+                        </div>
+                    `;
+                    break;
+                case 'steps':
+                    panelContent = `
+                        <div class="multi-info-display">
+                            <div class="label">👟 健走步數</div>
+                            <div class="value">${stepCount}</div>
+                        </div>
+                    `;
+                    break;
+                case 'reset':
+                    panelContent = `
+                        <div class="multi-info-display">
+                            <div class="label">🔄 重設功能</div>
+                            <button class="settings-btn" id="reset-func-btn">確認歸零</button>
+                        </div>
+                    `;
+                    break;
             }
+            multiInfoPanel.innerHTML = panelContent;
+            
+            // 如果是重設模式，需要單獨綁定歸零按鈕的點擊事件
+            if (currentMultiDisplayMode === 'reset') {
+                document.getElementById('reset-func-btn').addEventListener('click', resetCounts);
+            }
+        }
+
+        // 處理面板循環切換
+        multiInfoPanel.addEventListener('click', function(event) {
+            // 避免點擊歸零按鈕時觸發面板切換
+            if (event.target.id === 'reset-func-btn') return;
+
+            switch (currentMultiDisplayMode) {
+                case 'odometer':
+                    currentMultiDisplayMode = 'steps';
+                    break;
+                case 'steps':
+                    currentMultiDisplayMode = 'reset';
+                    break;
+                case 'reset':
+                    currentMultiDisplayMode = 'odometer';
+                    break;
+            }
+            updateMultiDisplay();
         });
 
-        // --- 5. 步數功能 (模擬) ---
-        // 網頁端獲取真實步數需依賴 DeviceMotionEvent 或 Pedometer API (支援度有限)
-        // 此處使用點擊螢幕模擬步數增加，方便測試版面
-        let stepCount = 0;
+        // 處理歸零功能
+        function resetCounts(event) {
+            event.stopPropagation(); // 阻止事件冒泡到面板的切換點擊
+            odometerKm = 0.0;
+            stepCount = 0;
+            alert("里程與步數已歸零！");
+            currentMultiDisplayMode = 'odometer'; // 重設後回到里程顯示
+            updateMultiDisplay();
+        }
+
+        // 初始化顯示
+        updateMultiDisplay();
+
+        // --- 5. 步數模擬功能 (點擊螢幕增加) ---
+        // 純網頁較難獲取真實計步器，此處使用點擊螢幕來模擬
         document.body.addEventListener('click', function() {
-            stepCount += Math.floor(Math.random() * 3) + 1; // 隨機增加 1~3 步
-            document.getElementById('steps-display').textContent = stepCount;
+            // 只有在顯示步數或里程模式下，點擊才增加步數
+            if (currentMultiDisplayMode === 'odometer' || currentMultiDisplayMode === 'steps') {
+                stepCount += Math.floor(Math.random() * 3) + 1; // 隨機增加 1~3 步
+                if (currentMultiDisplayMode === 'steps') {
+                    updateMultiDisplay(); // 如果目前在顯示步數，立即更新顯示
+                }
+            }
         });
     </script>
 </body>
